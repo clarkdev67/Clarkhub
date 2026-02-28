@@ -42,10 +42,9 @@ Main.Size = UDim2.new(0, 500, 0, 320)
 Main.Position = UDim2.new(0.5, -250, 0.5, -160)
 Main.BackgroundColor3 = MainColor
 Main.Active = true 
-Main.Draggable = false 
+Main.Draggable = false -- Fixed: Prevent slider conflict
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
 
--- Header Title (Drag Handle)
 local Title = Instance.new("TextLabel", Main)
 Title.Size = UDim2.new(1, -40, 0, 35)
 Title.Position = UDim2.new(0, 15, 0, 0)
@@ -288,17 +287,23 @@ AddSlider(MiscTab, "WalkSpeed", 16, 250, function(val) _G_WalkSpeed = val end)
 
 -- [[ 5. CORE LOOP ]] --
 task.spawn(function()
-    while _G.ClarkHub_Running and task.wait(0.1) do
+    while _G.ClarkHub_Running do
+        task.wait(0.1)
+
+        -- 1. WALKSPEED (Sprint Fix)
         pcall(function()
             if Player.Character and Player.Character:FindFirstChild("Humanoid") then
-                if _G_WalkSpeed > 16 then Player.Character.Humanoid.WalkSpeed = _G_WalkSpeed end
+                if _G_WalkSpeed > 16 then 
+                    Player.Character.Humanoid.WalkSpeed = _G_WalkSpeed 
+                end
             end
         end)
         
+        -- 2. AUTO CLICK & RANK
         if _G.AutoClick then ReplicatedStorage.Remotes.ClickRemote:FireServer() end
         if _G.AutoRank then ReplicatedStorage.Remotes.RankUpRemote:InvokeServer() end
 
-        -- AUTO FARM MOBS
+        -- 3. AUTO FARM MOBS
         if _G.AutoFarmMobs and _G.SelectedMob then
             local enemies = Workspace:FindFirstChild("Enemies")
             if enemies then
@@ -316,63 +321,46 @@ task.spawn(function()
             end
         end
 
-        -- AUTO RAID
-        -- [[ UPDATED AUTO RAID LOGIC ]] --
-if _G.ClarkHub_Enabled then
-    local raid = nil
-    -- Search for ANY raid folder in Workspace
-    for _, v in pairs(Workspace:GetChildren()) do 
-        if v.Name:find("Raid") or v.Name:find("World") then 
-            raid = v 
-            break 
-        end 
-    end
-    
-    if not raid then
-        -- Auto-Join Logic
-        pcall(function()
-            ReplicatedStorage.Remotes.GetRaidGate:InvokeServer("World4")
-            ReplicatedStorage.Remotes.JoinRaid:InvokeServer("World4")
-        end)
-        task.wait(1.5)
-    else
-        local root = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-        if root then
-            -- Find Nearest Enemy
-            local enemies = Workspace:FindFirstChild("Enemies") or raid:FindFirstChild("Enemies")
-            local target = nil
+        -- 4. STABLE AUTO RAID LOGIC
+        if _G.ClarkHub_Enabled then
+            local EnemiesFolder = game:GetService("Workspace"):FindFirstChild("Enemies")
+            local Character = game.Players.LocalPlayer.Character
+            local Root = Character and Character:FindFirstChild("HumanoidRootPart")
             
-            if enemies then
-                for _, e in pairs(enemies:GetChildren()) do
-                    local eroot = e:FindFirstChild("HumanoidRootPart")
-                    local ehum = e:FindFirstChildOfClass("Humanoid")
-                    if eroot and ehum and ehum.Health > 0 then
-                        target = eroot
-                        break 
+            if Root and EnemiesFolder then
+                local target = nil
+                for _, enemy in pairs(EnemiesFolder:GetChildren()) do
+                    local eRoot = enemy:FindFirstChild("HumanoidRootPart")
+                    local eHum = enemy:FindFirstChildOfClass("Humanoid")
+                    
+                    if eRoot and eHum and eHum.Health > 0 then
+                        target = eRoot
+                        break
                     end
                 end
-            end
-
-            if target then
-                -- Teleport behind target and Attack
-                root.CFrame = target.CFrame * CFrame.new(0, 0, 3.5)
-                ReplicatedStorage.Remotes.AttackEvent:FireServer()
-            else
-                -- Check for Room TP if no enemies are left
-                for _, obj in pairs(raid:GetDescendants()) do
-                    if (obj.Name == "TP" or obj.Name == "Teleport") and (root.Position - obj.Position).Magnitude < 500 then
-                        root.CFrame = obj.CFrame
-                        -- Fire touch interest to trigger the zone
-                        firetouchinterest(root, obj, 0)
-                        firetouchinterest(root, obj, 1)
-                        task.wait(0.5)
-                        break
+                
+                if target then
+                    Root.CFrame = target.CFrame * CFrame.new(0, 0, 3)
+                    game:GetService("ReplicatedStorage").Remotes.AttackEvent:FireServer()
+                else
+                    -- Check for Room TP if no enemies are left
+                    local raid = nil
+                    for _, v in pairs(Workspace:GetChildren()) do if v.Name:find("Raid") then raid = v break end end
+                    if raid then
+                        for _, obj in pairs(raid:GetDescendants()) do
+                            if (obj.Name == "TP" or obj.Name == "Door") and (Root.Position - obj.Position).Magnitude < 400 then
+                                Root.CFrame = obj.CFrame
+                                firetouchinterest(Root, obj, 0)
+                                firetouchinterest(Root, obj, 1)
+                                break
+                            end
+                        end
                     end
                 end
             end
         end
     end
-end
+end)
 
 UserInputService.InputBegan:Connect(function(i, p)
     if not p and i.KeyCode == _G_Bind then Main.Visible = not Main.Visible end

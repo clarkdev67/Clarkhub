@@ -42,7 +42,7 @@ Main.Size = UDim2.new(0, 500, 0, 320)
 Main.Position = UDim2.new(0.5, -250, 0.5, -160)
 Main.BackgroundColor3 = MainColor
 Main.Active = true 
-Main.Draggable = false -- Fixed: Prevent slider conflict
+Main.Draggable = false 
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
 
 local Title = Instance.new("TextLabel", Main)
@@ -274,7 +274,7 @@ end
 
 -- [[ 4. SETUP PAGES ]] --
 local RaidsTab = CreatePage("Raids")
-local MobsTab = CreatePage("Mobs") --
+local MobsTab = CreatePage("Mobs")
 local MiscTab = CreatePage("Misc")
 
 AddToggle(RaidsTab, "Auto Pyramid Raid", function(state) _G.ClarkHub_Enabled = state end)
@@ -321,20 +321,20 @@ task.spawn(function()
             end
         end
 
-        -- 4. STABLE AUTO RAID + FAST TP
+        -- 4. REVERTED AUTO RAID LOGIC (Stable TP)
         if _G.ClarkHub_Enabled then
-            local EnemiesFolder = game:GetService("Workspace"):FindFirstChild("Enemies")
             local Character = Player.Character
             local Root = Character and Character:FindFirstChild("HumanoidRootPart")
             
             if Root then
+                local enemies = Workspace:FindFirstChild("Enemies")
                 local target = nil
                 
-                -- Check for enemies first
-                if EnemiesFolder then
-                    for _, enemy in pairs(EnemiesFolder:GetChildren()) do
-                        local eRoot = enemy:FindFirstChild("HumanoidRootPart")
-                        local eHum = enemy:FindFirstChildOfClass("Humanoid")
+                -- Check for mobs
+                if enemies then
+                    for _, e in pairs(enemies:GetChildren()) do
+                        local eRoot = e:FindFirstChild("HumanoidRootPart")
+                        local eHum = e:FindFirstChildOfClass("Humanoid")
                         if eRoot and eHum and eHum.Health > 0 then
                             target = eRoot
                             break
@@ -343,33 +343,40 @@ task.spawn(function()
                 end
                 
                 if target then
-                    -- Attack logic
                     Root.CFrame = target.CFrame * CFrame.new(0, 0, 3)
                     ReplicatedStorage.Remotes.AttackEvent:FireServer()
                 else
-                    -- NO ENEMIES: Instantly scan for the next room TP
-                    local raid = nil
+                    -- REVERTED TP SEARCH: Look for doors inside the active Raid Map
+                    local currentRaid = nil
                     for _, v in pairs(Workspace:GetChildren()) do 
-                        if v.Name:find("Raid") or v.Name:find("World") then raid = v break end 
+                        if v.Name:find("Raid") or v.Name:find("World") then currentRaid = v break end 
                     end
                     
-                    if raid then
-                        for _, obj in pairs(raid:GetDescendants()) do
-                            -- Look for parts named TP, Gate, or Door
-                            if (obj.Name == "TP" or obj.Name == "Gate" or obj.Name == "Door" or obj.Name == "Teleport") and obj:IsA("BasePart") then
-                                if (Root.Position - obj.Position).Magnitude < 600 then
+                    if currentRaid then
+                        for _, obj in pairs(currentRaid:GetDescendants()) do
+                            -- Flexible search for TP zones
+                            if (obj.Name == "TP" or obj.Name == "Door" or obj.Name == "Gate") and obj:IsA("BasePart") then
+                                if (Root.Position - obj.Position).Magnitude < 550 then
                                     Root.CFrame = obj.CFrame
                                     firetouchinterest(Root, obj, 0)
                                     firetouchinterest(Root, obj, 1)
-                                    task.wait(0.5) -- Small delay to let the room load
+                                    task.wait(0.5)
                                     break
                                 end
                             end
                         end
+                    else
+                        -- Auto Join if not in a Raid
+                        pcall(function()
+                            ReplicatedStorage.Remotes.GetRaidGate:InvokeServer("World4")
+                            ReplicatedStorage.Remotes.JoinRaid:InvokeServer("World4")
+                        end)
                     end
                 end
             end
         end
+    end
+end)
 
 UserInputService.InputBegan:Connect(function(i, p)
     if not p and i.KeyCode == _G_Bind then Main.Visible = not Main.Visible end

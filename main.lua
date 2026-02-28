@@ -5,7 +5,7 @@ if _G.ClarkHub_Running then
     _G.AutoFarmMobs = false
     local oldUI = game:GetService("CoreGui"):FindFirstChild("clarkdev67_FinalFix")
     if oldUI then oldUI:Destroy() end
-    task.wait(0.3)
+    task.wait(0.5) -- Give the old loop time to die
 end
 
 _G.ClarkHub_Running = true
@@ -42,7 +42,6 @@ Main.Size = UDim2.new(0, 500, 0, 320)
 Main.Position = UDim2.new(0.5, -250, 0.5, -160)
 Main.BackgroundColor3 = MainColor
 Main.Active = true 
-Main.Draggable = false 
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
 
 local Title = Instance.new("TextLabel", Main)
@@ -54,7 +53,7 @@ Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.BackgroundTransparency = 1
 
--- Custom Drag Logic
+-- Custom Dragging
 local function MakeDraggable(dragHandle, frame)
     local dragging, dragInput, mousePos, framePos
     dragHandle.InputBegan:Connect(function(input)
@@ -91,7 +90,7 @@ CloseBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
--- Sidebar & Page View
+-- Sidebar
 local Sidebar = Instance.new("Frame", Main)
 Sidebar.Size = UDim2.new(0, 130, 1, -60)
 Sidebar.Position = UDim2.new(1, -145, 0, 45)
@@ -201,7 +200,6 @@ local function AddDynamicDropdown(parent, text, callback)
                 end
             end
             if #list == 0 then list = {"No Enemies Found"} end
-            
             for _, name in pairs(list) do
                 local Item = Instance.new("TextButton", ItemList)
                 Item.Size = UDim2.new(1, 0, 0, 30)
@@ -289,17 +287,17 @@ AddSlider(MiscTab, "WalkSpeed", 16, 250, function(val) _G_WalkSpeed = val end)
 task.spawn(function()
     while _G.ClarkHub_Running do
         task.wait(0.1)
+        
+        local Character = Player.Character
+        local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+        if not Root then continue end
 
         -- 1. WALKSPEED (Sprint Fix)
-        pcall(function()
-            if Player.Character and Player.Character:FindFirstChild("Humanoid") then
-                if _G_WalkSpeed > 16 then 
-                    Player.Character.Humanoid.WalkSpeed = _G_WalkSpeed 
-                end
-            end
-        end)
-        
-        -- 2. AUTO CLICK & RANK
+        if _G_WalkSpeed > 16 then 
+            Character.Humanoid.WalkSpeed = _G_WalkSpeed 
+        end
+
+        -- 2. AUTO CLICK / RANK
         if _G.AutoClick then ReplicatedStorage.Remotes.ClickRemote:FireServer() end
         if _G.AutoRank then ReplicatedStorage.Remotes.RankUpRemote:InvokeServer() end
 
@@ -309,10 +307,9 @@ task.spawn(function()
             if enemies then
                 for _, e in pairs(enemies:GetChildren()) do
                     if e.Name == _G.SelectedMob and e:FindFirstChild("Humanoid") and e.Humanoid.Health > 0 then
-                        local root = Player.Character:FindFirstChild("HumanoidRootPart")
                         local eroot = e:FindFirstChild("HumanoidRootPart")
-                        if root and eroot then
-                            root.CFrame = eroot.CFrame * CFrame.new(0, 0, 3)
+                        if eroot then
+                            Root.CFrame = eroot.CFrame * CFrame.new(0, 0, 3)
                             ReplicatedStorage.Remotes.AttackEvent:FireServer()
                         end
                         break
@@ -321,57 +318,51 @@ task.spawn(function()
             end
         end
 
-        -- 4. REVERTED AUTO RAID LOGIC (Stable TP)
+        -- 4. THE ULTIMATE RAID RE-FIX
         if _G.ClarkHub_Enabled then
-            local Character = Player.Character
-            local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+            local EnemiesFolder = Workspace:FindFirstChild("Enemies")
+            local target = nil
             
-            if Root then
-                local enemies = Workspace:FindFirstChild("Enemies")
-                local target = nil
-                
-                -- Check for mobs
-                if enemies then
-                    for _, e in pairs(enemies:GetChildren()) do
-                        local eRoot = e:FindFirstChild("HumanoidRootPart")
-                        local eHum = e:FindFirstChildOfClass("Humanoid")
-                        if eRoot and eHum and eHum.Health > 0 then
-                            target = eRoot
+            -- Priority: Kill Mobs
+            if EnemiesFolder then
+                for _, enemy in pairs(EnemiesFolder:GetChildren()) do
+                    local eRoot = enemy:FindFirstChild("HumanoidRootPart")
+                    local eHum = enemy:FindFirstChildOfClass("Humanoid")
+                    if eRoot and eHum and eHum.Health > 0 then
+                        target = eRoot
+                        break
+                    end
+                end
+            end
+            
+            if target then
+                Root.CFrame = target.CFrame * CFrame.new(0, 0, 3.5)
+                ReplicatedStorage.Remotes.AttackEvent:FireServer()
+            else
+                -- Priority: Find Next Room (The Door Hack)
+                local foundDoor = false
+                for _, obj in pairs(Workspace:GetDescendants()) do
+                    -- Detects the invisible trigger zone
+                    if obj:IsA("TouchTransmitter") and obj.Parent:IsA("BasePart") then
+                        local door = obj.Parent
+                        -- Distance check to find the closest door
+                        if (Root.Position - door.Position).Magnitude < 400 then
+                            Root.CFrame = door.CFrame
+                            firetouchinterest(Root, door, 0)
+                            firetouchinterest(Root, door, 1)
+                            foundDoor = true
+                            task.wait(0.5)
                             break
                         end
                     end
                 end
-                
-                if target then
-                    Root.CFrame = target.CFrame * CFrame.new(0, 0, 3)
-                    ReplicatedStorage.Remotes.AttackEvent:FireServer()
-                else
-                    -- REVERTED TP SEARCH: Look for doors inside the active Raid Map
-                    local currentRaid = nil
-                    for _, v in pairs(Workspace:GetChildren()) do 
-                        if v.Name:find("Raid") or v.Name:find("World") then currentRaid = v break end 
-                    end
-                    
-                    if currentRaid then
-                        for _, obj in pairs(currentRaid:GetDescendants()) do
-                            -- Flexible search for TP zones
-                            if (obj.Name == "TP" or obj.Name == "Door" or obj.Name == "Gate") and obj:IsA("BasePart") then
-                                if (Root.Position - obj.Position).Magnitude < 550 then
-                                    Root.CFrame = obj.CFrame
-                                    firetouchinterest(Root, obj, 0)
-                                    firetouchinterest(Root, obj, 1)
-                                    task.wait(0.5)
-                                    break
-                                end
-                            end
-                        end
-                    else
-                        -- Auto Join if not in a Raid
-                        pcall(function()
-                            ReplicatedStorage.Remotes.GetRaidGate:InvokeServer("World4")
-                            ReplicatedStorage.Remotes.JoinRaid:InvokeServer("World4")
-                        end)
-                    end
+
+                -- Final Priority: Join if not in Raid
+                if not foundDoor then
+                    pcall(function()
+                        ReplicatedStorage.Remotes.GetRaidGate:InvokeServer("World4")
+                        ReplicatedStorage.Remotes.JoinRaid:InvokeServer("World4")
+                    end)
                 end
             end
         end
